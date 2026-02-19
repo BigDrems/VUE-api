@@ -1,0 +1,46 @@
+// Project LYT - Week 1 Schema
+// PostGIS geography type used for spatial coordinates (WGS84)
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  COMMUTER
+  DRIVER
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  role      Role     @default(COMMUTER)
+  createdAt DateTime @default(now())
+  driver    Driver?
+}
+
+model Driver {
+  id           String           @id @default(uuid())
+  userId       String           @unique
+  vehiclePlate String           @unique
+  isVerified   Boolean          @default(false)
+  user         User             @relation(fields: [userId], references: [id])
+  location     VehicleLocation?
+}
+
+model VehicleLocation {
+  id        String   @id @default(uuid())
+  driverId  String   @unique
+  /// geography(Point, 4326) - WGS84 GPS coordinates managed via raw SQL
+  coords    Unsupported("geography(Point, 4326)")
+  isActive  Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+  driver    Driver   @relation(fields: [driverId], references: [id])
+
+  @@index([coords], name: "spatial_idx", type: Gist)
+}
