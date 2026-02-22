@@ -1,5 +1,7 @@
 import { Server as HttpServer } from "http";
 import { Server as SocketServer, Socket } from "socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
+import { pubClient, subClient, redisClient } from "../core/config/redis";
 import jwt from "jsonwebtoken";
 import { env } from "../core/config/env";
 import { prisma } from "../core/config/prisma";
@@ -14,10 +16,22 @@ const MIN_DELTA_METERS = 5;
 
 export function initSocketServer(httpServer: HttpServer): SocketServer {
   const io = new SocketServer(httpServer, {
-    cors: { origin: "*" },
+    cors: {
+      origin: env.CORS_ORIGIN === "*" ? "*" : env.CORS_ORIGIN.split(","),
+      methods: ["GET", "POST"],
+      credentials: true,
+    },
     // Use binary WebSocket frames for efficiency
     transports: ["websocket"],
   });
+
+  // Setup Redis Adapter for scalability
+  try {
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log("[Socket] Redis adapter initialized");
+  } catch (err) {
+    console.error("[Socket] Failed to initialize Redis adapter:", err);
+  }
 
   //JWT auth middleware 
   io.use((socket: Socket, next) => {
@@ -72,15 +86,20 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
         }
 
         try {
-          // Raw PostGIS update — only touches VehicleLocation for this driver
-          await prisma.$executeRaw`
+          // 1. Hot Write to Redis Geo (Write-Behind Pattern)
+          await redisClient.geoadd("active_drivers", lng, lat, driver.driverId!);
+
+          // 2. Async Write-behind to PostGIS
+          prisma.$executeRaw`
             UPDATE "VehicleLocation"
             SET
               coords     = ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
               "updatedAt" = NOW()
             WHERE "driverId" = ${driver.driverId}
               AND "isActive" = true
-          `;
+          `.catch(err => {
+            console.error(`[WriteBehind] DB error for driver ${driver.driverId}:`, err);
+          });
 
           lastPositions.set(driver.driverId!, { lat, lng });
 
