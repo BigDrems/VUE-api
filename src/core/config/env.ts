@@ -20,4 +20,9 @@ export const env = {
     process.env.TERMINAL_RADIUS_METERS || "500",
     10
   ),
+  CORS_ORIGIN: process.env.CORS_ORIGIN || "*",
+  REDIS_URL: process.env.REDIS_URL, // Optional for scalability
+  SUPABASE_URL: process.env.SUPABASE_URL || "",
+  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || "",
+  SUPABASE_JWT_SECRET: process.env.SUPABASE_JWT_SECRET || "",
 } as const;
